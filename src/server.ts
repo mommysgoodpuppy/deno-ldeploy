@@ -9,6 +9,8 @@
 
 import { App, BusyError } from "./app.ts";
 import { type Config, loadConfig } from "./config.ts";
+import { HostStats } from "./hoststats.ts";
+import { Ddns } from "./ddns.ts";
 
 export async function serve() {
   const config = await loadConfig();
@@ -24,14 +26,41 @@ export async function serve() {
     for (const host of app.config.hostnames) byHost.set(host, app);
   }
 
+  // A DDNS failure (bad token, API down) is logged and retried, never fatal:
+  // the apps don't depend on it.
+  const ddns = config.ddns ? new Ddns(config.ddns) : null;
+  await ddns?.start().catch((err) => console.error(`ddns: not started: ${err.message}`));
+
+  // Sampling only runs if some app serves the stats.
+  const hostStats = [...apps.values()].some((a) => a.config.hostStats) ? new HostStats() : null;
+  await hostStats?.start();
+  const startedAt = new Date().toISOString();
+  const requests = new Map<string, number>();
+  // What the stats endpoint says about the hosted apps: public facts only.
+  const appSummaries = () =>
+    [...apps.values()].map((a) => {
+      const s = a.status();
+      return {
+        name: a.name,
+        type: s.instance?.type ?? null,
+        liveSince: s.live?.createdAt ?? null,
+        requests: requests.get(a.name) ?? 0,
+      };
+    });
+
   const publicServer = Deno.serve({
     ...config.listen,
     onListen: ({ hostname, port }) => console.log(`router on http://${hostname}:${port}`),
-  }, (req, info) => {
+  }, async (req, info) => {
     const host = (req.headers.get("host") ?? "").toLowerCase().replace(/:\d+$/, "");
     // <app>.localhost always works, which browsers resolve to loopback.
     const app = byHost.get(host) ?? apps.get(host.replace(/\.localhost$/, ""));
     if (!app) return new Response(`no app serves ${host}\n`, { status: 404 });
+    requests.set(app.name, (requests.get(app.name) ?? 0) + 1);
+    if (hostStats && req.method === "GET" && new URL(req.url).pathname === app.config.hostStats) {
+      const body = { ...(await hostStats.snapshot(appSummaries())), ldeploySince: startedAt };
+      return Response.json(body, { headers: { "cache-control": "no-store" } });
+    }
     if (!app.instance) return new Response(`${app.name} has no live build\n`, { status: 503 });
     return app.instance.handle(req, info);
   });
@@ -39,10 +68,12 @@ export async function serve() {
   const controlServer = Deno.serve({
     ...config.control,
     onListen: ({ hostname, port }) => console.log(`control on http://${hostname}:${port}`),
-  }, (req) => control(req, apps, config));
+  }, (req) => control(req, apps, config, ddns));
 
   const shutdown = async () => {
     console.log("shutting down");
+    hostStats?.stop();
+    ddns?.stop();
     await Promise.all([...apps.values()].map((a) => a.stop()));
     await Promise.all([publicServer.shutdown(), controlServer.shutdown()]);
     Deno.exit(0);
@@ -51,13 +82,22 @@ export async function serve() {
   Deno.addSignalListener("SIGTERM", shutdown);
 }
 
-async function control(req: Request, apps: Map<string, App>, config: Config): Promise<Response> {
+async function control(
+  req: Request,
+  apps: Map<string, App>,
+  config: Config,
+  ddns: Ddns | null,
+): Promise<Response> {
   const url = new URL(req.url);
   const [, resource, name, action] = url.pathname.split("/");
 
   if (resource !== "apps") return new Response("not found\n", { status: 404 });
   if (!name) {
-    return Response.json({ dataDir: config.dataDir, apps: [...apps.values()].map((a) => a.status()) });
+    return Response.json({
+      dataDir: config.dataDir,
+      apps: [...apps.values()].map((a) => a.status()),
+      ddns: ddns?.status() ?? null,
+    });
   }
   const app = apps.get(name);
   if (!app) return new Response(`no app named ${name}\n`, { status: 404 });

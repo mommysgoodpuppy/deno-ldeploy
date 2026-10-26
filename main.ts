@@ -75,6 +75,15 @@ switch (command) {
     const res = await api(name ? `/apps/${needApp()}` : "/apps");
     const body = await res.json();
     for (const app of name ? [body] : body.apps) printStatus(app);
+    if (!name && body.ddns) {
+      const d = body.ddns;
+      console.log(
+        `ddns (${d.zone}): ${d.ip ?? "no IP yet"}, checked ${d.checkedAt ?? "never"}${
+          d.error ? `, error: ${d.error}` : ""
+        }`,
+      );
+      for (const [record, ip] of Object.entries(d.records)) console.log(`  ${record} -> ${ip}`);
+    }
     break;
   }
 

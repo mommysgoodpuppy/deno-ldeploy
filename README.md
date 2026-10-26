@@ -86,6 +86,34 @@ cloudflared tunnel route dns ldeploy <hostname>     # --overwrite-dns to replace
 
 Cloudflare terminates TLS, and requests arrive with `X-Forwarded-Proto: https`.
 
+## host stats
+
+An app with `"hostStats": "/api/server"` gets live hardware stats as JSON at that path on its hostnames:
+machine, CPU model, CPU load and temperature (with 10 minutes of 5-second history), memory, disk, battery,
+network throughput and Wi-Fi signal, uptime, and the hosted apps with request counts. It's read from `/proc`
+and `/sys`, so it's Linux only, and it never includes IPs, the hostname, users or processes. my-website's
+homepage shows it.
+
+## dynamic IP
+
+Tunnel-served hostnames don't care about the home IP: cloudflared connects outward. Plain A records that point
+at the connection itself (e.g. for SSH or game streaming) do. A `ddns` block keeps those up to date:
+
+```jsonc
+"ddns": {
+  "zone": "petplay.fi",
+  "records": ["vrpc.petplay.fi"],
+  // A Cloudflare API token with Zone > DNS > Edit on the zone, and nothing else.
+  "tokenFile": "secrets/cloudflare-dns.token",
+  "interval": 300
+}
+```
+
+Every `interval` seconds the daemon looks up its public IPv4 (Cloudflare's trace endpoint, then ipify) and
+patches any listed record that differs, leaving its proxied setting and TTL alone. The records must already
+exist. `ldeploy status` shows the last check. A failing check is logged and retried; it never affects the
+apps.
+
 ## moving bsky-twit-bridge off Deploy
 
 Do these **in order**. The bot's KV records which tweets it already mirrored. Started against an empty KV with
@@ -118,6 +146,8 @@ src/app.ts         per-app lifecycle: deploy, switch, rollback, poll, prune
 src/build.ts       clone + install + build
 src/instance.ts    static server / supervised deno process
 src/proxy.ts       HTTP + WebSocket forwarding
+src/hoststats.ts   live hardware stats (hostStats)
+src/ddns.ts        Cloudflare A records kept on the public IP
 src/server.ts      router and control API
 src/state.ts       on-disk layout and state.json
 scripts/import-kv.ts   copy a KV database into an app's local one

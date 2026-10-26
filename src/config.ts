@@ -47,7 +47,20 @@ export interface AppConfig {
   denoFlags: string[];
   /** Seconds between checks of `branch` for new commits; 0 disables. */
   poll: number;
+  /** Path on this app's hostnames that serves live host stats (src/hoststats.ts). */
+  hostStats?: string;
   deploy: DeploySettings;
+}
+
+export interface DdnsConfig {
+  /** Cloudflare zone name, e.g. petplay.fi. */
+  zone: string;
+  /** A records to keep pointed at this machine's public IPv4 address. */
+  records: string[];
+  /** File holding a Cloudflare API token with DNS edit on the zone. */
+  tokenFile: string;
+  /** Seconds between checks. */
+  interval: number;
 }
 
 export interface Config {
@@ -55,6 +68,7 @@ export interface Config {
   control: { hostname: string; port: number };
   dataDir: string;
   keepBuilds: number;
+  ddns?: DdnsConfig;
   apps: Map<string, AppConfig>;
 }
 
@@ -104,6 +118,7 @@ export async function loadConfig(path = CONFIG_PATH): Promise<Config> {
       env: app.env ?? {},
       denoFlags: app.denoFlags ?? DEFAULT_DENO_FLAGS,
       poll: app.poll ?? 0,
+      hostStats: app.hostStats,
       deploy: app.deploy ?? {},
     });
   }
@@ -123,6 +138,14 @@ export async function loadConfig(path = CONFIG_PATH): Promise<Config> {
     control: parseAddress(raw.control ?? "127.0.0.1:8001", 8001),
     dataDir: rel(raw.dataDir ?? "data"),
     keepBuilds: raw.keepBuilds ?? 3,
+    ddns: raw.ddns
+      ? {
+        zone: raw.ddns.zone,
+        records: raw.ddns.records ?? [],
+        tokenFile: rel(raw.ddns.tokenFile),
+        interval: raw.ddns.interval ?? 300,
+      }
+      : undefined,
     apps,
   };
 }
