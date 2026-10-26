@@ -9,3 +9,6 @@
 
 # Per-machine config, used instead of ldeploy.jsonc when present
 /ldeploy.local.jsonc
+
+# Local credentials
+.env
