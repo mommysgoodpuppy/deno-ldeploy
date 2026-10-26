@@ -1,0 +1,17 @@
+{
+  "tasks": {
+    // The daemon: public router, control API, builds and app processes.
+    "serve": "deno run -A main.ts serve",
+    // Everything else talks to a running daemon: deploy, status, rollback...
+    "ldeploy": "deno run -A main.ts",
+    "check": "deno check main.ts"
+  },
+  "fmt": { "lineWidth": 110 },
+  "imports": {
+    "@std/dotenv": "jsr:@std/dotenv@^0.225.5",
+    "@std/fs": "jsr:@std/fs@^1.0.19",
+    "@std/http": "jsr:@std/http@^1.0.20",
+    "@std/jsonc": "jsr:@std/jsonc@^1.0.2",
+    "@std/path": "jsr:@std/path@^1.1.1"
+  }
+}

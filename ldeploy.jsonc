@@ -1,0 +1,43 @@
+{
+  // Public router. Point the cloudflared tunnel (or a reverse proxy) here.
+  // Every app is also reachable at http://<app>.localhost:8000 for testing.
+  "listen": "127.0.0.1:8000",
+  // Management API used by the CLI. Never expose this: it can trigger builds.
+  "control": "127.0.0.1:8001",
+  // Builds, logs, state and each app's KV database. Relative to this file.
+  "dataDir": "data",
+  // Working builds kept per app for rollback.
+  "keepBuilds": 3,
+
+  "apps": {
+    "my-website": {
+      "source": "https://github.com/mommysgoodpuppy/my-website.git",
+      "branch": "main",
+      "hostnames": ["petplay.fi"],
+      // Check the branch every 2 minutes and deploy new commits, like the
+      // Deploy GitHub integration did.
+      "poll": 120,
+      // my-website's settings lived in the Deploy dashboard rather than its
+      // deno.json, so they're spelled out here. A real clone already has its
+      // submodules, so fetchsubs no-ops; getbun still provides bun.
+      "deploy": {
+        "install": "deno task fetchsubs && deno task getbun",
+        "build": "deno task build",
+        "runtime": { "type": "static", "cwd": "_site" }
+      }
+    },
+
+    "bsky-twit-bridge": {
+      // Install/build/runtime come from the deploy block in its deno.json.
+      "source": "https://github.com/mommysgoodpuppy/bsky-twit-bridge",
+      "branch": "main",
+      // The HTTP side is only a status page plus RUN_TOKEN-gated controls, so
+      // no public hostname; it's at http://bsky-twit-bridge.localhost:8000.
+      "hostnames": [],
+      "poll": 120,
+      // The secrets that were set in the Deploy dashboard. See README before
+      // the first start: an empty KV plus BACKFILL_DAYS re-posts old tweets.
+      "envFile": "secrets/bsky-twit-bridge.env"
+    }
+  }
+}

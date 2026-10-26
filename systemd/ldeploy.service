@@ -1,0 +1,22 @@
+# User unit for the ldeploy daemon. Install with:
+#   ln -s ~/git/deno-ldeploy/systemd/ldeploy.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now ldeploy
+# Lingering is on for this user, so it runs without a login session.
+[Unit]
+Description=ldeploy: local Deno Deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=%h/git/deno-ldeploy
+ExecStart=%h/.deno/bin/deno run -A main.ts serve
+# Builds shell out to git, tar and sh; deno is found by its absolute path above.
+Environment=PATH=%h/.deno/bin:/usr/local/bin:/usr/bin
+Restart=on-failure
+RestartSec=5
+# The daemon stops its apps on SIGTERM and gives each 10s to exit.
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

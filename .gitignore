@@ -1,0 +1,8 @@
+# Builds, logs, state and KV databases
+/data/
+
+# App secrets (env files)
+/secrets/
+
+# Agent scratch files
+/_scratch/
