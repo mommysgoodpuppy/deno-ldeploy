@@ -72,7 +72,7 @@ public hostname above the final 404 rule:
 then point the name at the tunnel and restart cloudflared:
 
 ```sh
-cloudflared tunnel route dns 5f220ec9-8f27-4484-99b0-fa9da72e15ee petplay.fi
+cloudflared tunnel route dns <tunnel-id> petplay.fi   # the `tunnel:` value in vrmodem.yml
 ```
 
 This replaces whatever DNS record currently points petplay.fi at Deno Deploy. Cloudflare terminates TLS, and
