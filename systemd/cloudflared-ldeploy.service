@@ -1,0 +1,16 @@
+# User unit for the cloudflared tunnel in front of ldeploy's router. Expects
+# ~/.cloudflared/ldeploy.yml (tunnel id, credentials file, ingress rules).
+#   ln -s ~/git/deno-ldeploy/systemd/cloudflared-ldeploy.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now cloudflared-ldeploy
+[Unit]
+Description=cloudflared tunnel for ldeploy
+After=network-online.target ldeploy.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel --config %h/.cloudflared/ldeploy.yml run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -61,22 +61,30 @@ Restarting the daemon brings each app's live build back up without rebuilding.
 
 ## going public
 
-The existing tunnel (`~/.cloudflared/vrmodem.yml`) already serves the petplay.fi zone. Add a rule for each
-public hostname above the final 404 rule:
+Public traffic arrives through a dedicated cloudflared tunnel named `ldeploy`, running next to the daemon as
+`systemd/cloudflared-ldeploy.service`. The tunnel was created on a machine holding the account's
+`~/.cloudflared/cert.pem`; the server only has that tunnel's credentials file, which can run this tunnel and
+nothing else.
+
+`~/.cloudflared/ldeploy.yml` on the server sends each public hostname to the router:
 
 ```yaml
-- hostname: petplay.fi
-  service: http://127.0.0.1:8000
+tunnel: <tunnel id>
+credentials-file: /home/ellie/.cloudflared/<tunnel id>.json
+ingress:
+  - hostname: petplay.fi
+    service: http://127.0.0.1:8000
+  - service: http_status:404
 ```
 
-then point the name at the tunnel and restart cloudflared:
+To publish another hostname: add it to that ingress list and to the app's `hostnames`, restart both units,
+then point DNS at the tunnel from the machine with `cert.pem`:
 
 ```sh
-cloudflared tunnel route dns <tunnel-id> petplay.fi   # the `tunnel:` value in vrmodem.yml
+cloudflared tunnel route dns ldeploy <hostname>     # --overwrite-dns to replace an existing record
 ```
 
-This replaces whatever DNS record currently points petplay.fi at Deno Deploy. Cloudflare terminates TLS, and
-requests arrive with `X-Forwarded-Proto: https`.
+Cloudflare terminates TLS, and requests arrive with `X-Forwarded-Proto: https`.
 
 ## moving bsky-twit-bridge off Deploy
 
