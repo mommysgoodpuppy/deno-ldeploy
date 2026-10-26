@@ -6,3 +6,6 @@
 
 # Agent scratch files
 /_scratch/
+
+# Per-machine config, used instead of ldeploy.jsonc when present
+/ldeploy.local.jsonc

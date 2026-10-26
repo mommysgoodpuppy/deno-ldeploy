@@ -66,9 +66,18 @@ function parseAddress(value: string, fallbackPort: number) {
   return { hostname: hostname || "127.0.0.1", port: Number(port) };
 }
 
-export const CONFIG_PATH = resolve(
-  Deno.env.get("LDEPLOY_CONFIG") ?? "ldeploy.jsonc",
-);
+// A gitignored ldeploy.local.jsonc replaces the committed config, so one
+// machine can host a different set of apps without a dirty checkout.
+function defaultConfigPath() {
+  try {
+    Deno.statSync("ldeploy.local.jsonc");
+    return "ldeploy.local.jsonc";
+  } catch {
+    return "ldeploy.jsonc";
+  }
+}
+
+export const CONFIG_PATH = resolve(Deno.env.get("LDEPLOY_CONFIG") ?? defaultConfigPath());
 
 export async function loadConfig(path = CONFIG_PATH): Promise<Config> {
   // deno-lint-ignore no-explicit-any
