@@ -4,6 +4,9 @@ A local stand-in for Deno Deploy: one daemon that builds, routes and supervises 
 
 - `data/` holds production state, including each app's `kv.sqlite3`; never delete or reset it.
   `secrets/` holds real credentials; don't print or commit them.
+- `markdown/`: plans, work in progress and notes that should outlast a session. Keep project
+  memory here, not in a harness's own memory system (Claude Code memory, Codex memories and the
+  like).
 - Use `_scratch/` for agent scratch files, experiments and local test artifacts. It is ignored by
   Git. Global tmp may be used but is not persistent; project-local, don't use `project/tmp/` or
   others, only `_scratch/`.
