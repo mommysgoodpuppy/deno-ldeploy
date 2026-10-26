@@ -5,13 +5,12 @@
  *
  * It's public, so it reports only how busy the machine is, never what it is:
  * no hardware model, CPU, OS, kernel version, uptime (which dates the running
- * kernel), capacities, IPs, hostname, users or processes. Anything that would
+ * kernel), capacities or disk use, IPs, hostname, users or processes. Anything that would
  * help match the machine against a vulnerability announcement stays out.
  */
 
 const SAMPLE_MS = 5_000;
 const HISTORY = 120; // 10 minutes of samples
-const DISK_EVERY_MS = 60_000;
 
 interface Sample {
   t: number;
@@ -121,33 +120,17 @@ async function memory() {
   };
 }
 
-/** Root filesystem use, as a percentage. */
-async function diskPercent(): Promise<number | null> {
-  try {
-    const { stdout } = await new Deno.Command("df", { args: ["-B1", "--output=size,used", "/"] }).output();
-    const [size, used] = new TextDecoder().decode(stdout).trim().split("\n")[1].trim().split(/\s+/).map(
-      Number,
-    );
-    return size > 0 ? (100 * used) / size : null;
-  } catch {
-    return null;
-  }
-}
-
 export class HostStats {
   #history: Sample[] = [];
   #lastCpu: { busy: number; total: number } | null = null;
   #lastNet: { t: number; rx: number; tx: number } | null = null;
   #iface: string | null = null;
-  #disk: number | null = null;
   #timers: ReturnType<typeof setInterval>[] = [];
 
   async start() {
     this.#iface = await defaultInterface();
-    this.#disk = await diskPercent();
     await this.#sample();
     this.#timers.push(setInterval(() => this.#sample(), SAMPLE_MS));
-    this.#timers.push(setInterval(async () => (this.#disk = await diskPercent()), DISK_EVERY_MS));
   }
 
   stop() {
@@ -187,7 +170,6 @@ export class HostStats {
       cpuPercent: latest?.cpu ?? null,
       tempC: latest?.temp ?? null,
       memory: await memory(),
-      diskPercent: this.#disk,
       network: {
         kind: this.#iface?.startsWith("wl") ? "wifi" : this.#iface ? "wired" : null,
         rxBytesPerSec: latest?.rx ?? null,

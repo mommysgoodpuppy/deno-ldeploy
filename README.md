@@ -89,13 +89,14 @@ Cloudflare terminates TLS, and requests arrive with `X-Forwarded-Proto: https`.
 ## host stats
 
 An app with `"hostStats": "/api/server"` gets live load figures as JSON at that path on its hostnames: CPU use
-and temperature, memory and swap use, disk use (as percentages), load average, network throughput and Wi-Fi
-signal, with 10 minutes of 5-second history, plus the hosted apps and their request counts. It's read from
-`/proc` and `/sys`, so it's Linux only.
+and temperature, memory and swap use (as percentages), load average, network throughput and Wi-Fi signal, with
+10 minutes of 5-second history, plus the hosted apps and their request counts. It's read from `/proc` and
+`/sys`, so it's Linux only.
 
 The endpoint is public, so it says how busy the machine is, never what it is: no hardware model, CPU, OS,
-kernel version, uptime (which dates the running kernel), capacities, IPs, hostname, users or processes. Keep
-it that way; those are what match a machine to a vulnerability announcement. my-website's homepage shows it.
+kernel version, uptime (which dates the running kernel), capacities or disk use, IPs, hostname, users or
+processes. Keep it that way; those are what match a machine to a vulnerability announcement. my-website's
+homepage shows it.
 
 ## dynamic IP
 
