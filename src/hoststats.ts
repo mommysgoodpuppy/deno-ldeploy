@@ -3,8 +3,10 @@
  * and /sys (Linux only). Samples every few seconds in the background so each
  * request is cheap and rates (CPU, network) have a window to be measured over.
  *
- * Deliberately excludes anything identifying: no IPs, hostname, users or
- * processes.
+ * It's public, so it reports only how busy the machine is, never what it is:
+ * no hardware model, CPU, OS, kernel version, uptime (which dates the running
+ * kernel), capacities, IPs, hostname, users or processes. Anything that would
+ * help match the machine against a vulnerability announcement stays out.
  */
 
 const SAMPLE_MS = 5_000;
@@ -15,6 +17,7 @@ interface Sample {
   t: number;
   cpu: number | null;
   temp: number | null;
+  mem: number | null;
   rx: number | null;
   tx: number | null;
 }
@@ -91,22 +94,6 @@ async function cpuTemp(): Promise<number | null> {
   return best?.temp ?? null;
 }
 
-async function power() {
-  let battery: { percent: number | null; status: string | null } | null = null;
-  let ac: boolean | null = null;
-  for await (const dir of entries("/sys/class/power_supply")) {
-    const base = `/sys/class/power_supply/${dir.name}`;
-    const type = await read(`${base}/type`);
-    // scope=Device is a peripheral's battery (mouse, controller), not the machine's.
-    if (type === "Battery" && !battery && (await read(`${base}/scope`)) !== "Device") {
-      battery = { percent: await readNumber(`${base}/capacity`), status: await read(`${base}/status`) };
-    } else if (type === "Mains") {
-      ac = (await readNumber(`${base}/online`)) === 1;
-    }
-  }
-  return { battery, ac };
-}
-
 /** Wi-Fi signal for `iface`, if it's wireless. */
 async function wifi(iface: string) {
   for (const line of (await read("/proc/net/wireless"))?.split("\n").slice(2) ?? []) {
@@ -118,48 +105,33 @@ async function wifi(iface: string) {
   return null;
 }
 
+/** RAM and swap in use, as percentages; sizes would describe the hardware. */
 async function memory() {
   const info = new Map<string, number>();
   for (const line of (await read("/proc/meminfo"))?.split("\n") ?? []) {
     const [key, value] = line.split(":");
-    if (value) info.set(key, parseInt(value) * 1024);
+    if (value) info.set(key, parseInt(value));
   }
+  const percent = (used: number, total: number) => (total > 0 ? (100 * used) / total : null);
   const total = info.get("MemTotal") ?? 0;
   const swapTotal = info.get("SwapTotal") ?? 0;
   return {
-    total,
-    used: total - (info.get("MemAvailable") ?? 0),
-    swapTotal,
-    swapUsed: swapTotal - (info.get("SwapFree") ?? 0),
+    usedPercent: percent(total - (info.get("MemAvailable") ?? total), total),
+    swapPercent: percent(swapTotal - (info.get("SwapFree") ?? swapTotal), swapTotal),
   };
 }
 
-async function disk() {
+/** Root filesystem use, as a percentage. */
+async function diskPercent(): Promise<number | null> {
   try {
     const { stdout } = await new Deno.Command("df", { args: ["-B1", "--output=size,used", "/"] }).output();
     const [size, used] = new TextDecoder().decode(stdout).trim().split("\n")[1].trim().split(/\s+/).map(
       Number,
     );
-    return { total: size, used };
+    return size > 0 ? (100 * used) / size : null;
   } catch {
     return null;
   }
-}
-
-async function machine() {
-  // Firmware leaves placeholders in fields the vendor didn't fill in.
-  const real = (v: string | null) =>
-    v &&
-      !/^(none|not specified|default string|to be filled by o\.?e\.?m\.?|system (product name|manufacturer)|0)$/i
-        .test(v)
-      ? v
-      : null;
-  const vendor = real(await read("/sys/class/dmi/id/sys_vendor"));
-  // Lenovo puts the marketing name in product_version, others in product_name.
-  const name = real(await read("/sys/class/dmi/id/product_version")) ??
-    real(await read("/sys/class/dmi/id/product_name"));
-  if (!name) return vendor;
-  return vendor && !name.toLowerCase().startsWith(vendor.toLowerCase()) ? `${vendor} ${name}` : name;
 }
 
 export class HostStats {
@@ -167,25 +139,15 @@ export class HostStats {
   #lastCpu: { busy: number; total: number } | null = null;
   #lastNet: { t: number; rx: number; tx: number } | null = null;
   #iface: string | null = null;
-  #disk: Awaited<ReturnType<typeof disk>> = null;
-  #static: Record<string, unknown> = {};
+  #disk: number | null = null;
   #timers: ReturnType<typeof setInterval>[] = [];
 
   async start() {
-    const cpuInfo = (await read("/proc/cpuinfo")) ?? "";
-    const os = (await read("/etc/os-release"))?.match(/^PRETTY_NAME="?([^"\n]*)"?/m)?.[1] ?? null;
-    this.#static = {
-      machine: await machine(),
-      cpu: cpuInfo.match(/^model name\s*:\s*(.*)$/m)?.[1]?.replace(/\s+/g, " ") ?? null,
-      threads: navigator.hardwareConcurrency,
-      os,
-      kernel: Deno.osRelease(),
-    };
     this.#iface = await defaultInterface();
-    this.#disk = await disk();
+    this.#disk = await diskPercent();
     await this.#sample();
     this.#timers.push(setInterval(() => this.#sample(), SAMPLE_MS));
-    this.#timers.push(setInterval(async () => (this.#disk = await disk()), DISK_EVERY_MS));
+    this.#timers.push(setInterval(async () => (this.#disk = await diskPercent()), DISK_EVERY_MS));
   }
 
   stop() {
@@ -212,7 +174,8 @@ export class HostStats {
     }
     this.#lastNet = bytes ? { t, ...bytes } : null;
 
-    this.#history.push({ t, cpu: cpuPercent, temp: await cpuTemp(), rx, tx });
+    const mem = (await memory()).usedPercent;
+    this.#history.push({ t, cpu: cpuPercent, temp: await cpuTemp(), mem, rx, tx });
     if (this.#history.length > HISTORY) this.#history.shift();
   }
 
@@ -220,14 +183,11 @@ export class HostStats {
     const latest = this.#history.at(-1);
     const [load1, load5, load15] = Deno.loadavg();
     return {
-      ...this.#static,
-      uptimeSeconds: Deno.osUptime(),
       load: [load1, load5, load15],
       cpuPercent: latest?.cpu ?? null,
       tempC: latest?.temp ?? null,
       memory: await memory(),
-      disk: this.#disk,
-      power: await power(),
+      diskPercent: this.#disk,
       network: {
         kind: this.#iface?.startsWith("wl") ? "wifi" : this.#iface ? "wired" : null,
         rxBytesPerSec: latest?.rx ?? null,
@@ -235,7 +195,7 @@ export class HostStats {
         wifi: this.#iface?.startsWith("wl") ? await wifi(this.#iface) : null,
       },
       sampleSeconds: SAMPLE_MS / 1000,
-      history: this.#history.map(({ t, cpu, temp, rx, tx }) => ({ t, cpu, temp, rx, tx })),
+      history: this.#history,
       apps,
       at: new Date().toISOString(),
     };
